@@ -1,0 +1,34 @@
+#!/bin/bash
+
+if [ $# -lt 1 ];then
+echo You must sepcify the directory
+exit 1
+fi
+
+dir=$1
+cd $dir
+mkdir $dir/GDs
+mkdir $dir/GDs/allfig
+mkdir $dir/GDs/allgd
+mkdir $dir/GDs/allmat
+mkdir $dir/GDs/allps
+mkdir $dir/GDs/alltxt
+
+mkdir $dir/postprocess
+
+mkdir $dir/postprocess/info
+mkdir $dir/postprocess/mat
+mkdir $dir/postprocess/offset
+mkdir $dir/postprocess/txt
+mkdir $dir/postprocess/vel
+
+mkdir $dir/postprocess/info/ATML
+mkdir $dir/postprocess/info/noATML
+mkdir $dir/postprocess/mat/ATML
+mkdir $dir/postprocess/mat/noATML
+mkdir $dir/postprocess/offset/ATML
+mkdir $dir/postprocess/offset/noATML
+mkdir $dir/postprocess/txt/ATML
+mkdir $dir/postprocess/txt/noATML
+mkdir $dir/postprocess/vel/ATML
+mkdir $dir/postprocess/vel/noATML

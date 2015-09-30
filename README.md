@@ -1,0 +1,2 @@
+## GIPSY-OASIS GPS data processing package  
+This repository includes codes to download and process GPS data using GIPSY-OASIS developed by [the Jet Propulsion Laboratory (JPL)] (https://gipsy-oasis.jpl.nasa.gov/)

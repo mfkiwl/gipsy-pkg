@@ -1,0 +1,77 @@
+#!/bin/csh -f
+#
+#         C-shell script : CRZ2RNX
+#             (frontend of CRX2RNX)
+#                 1996.12.19  created by Y. Hatanaka.
+#                 2007.06.10  changed by Y. Hatanaka.
+#                      - replace "compress" with "uncompress"
+#                      - file name extension may be lower and upper case
+#                                     e-mail: hata@gsi.go.jp
+#--------------------------------------------------------------------
+if($#argv < 1) then
+more << EOF
+
+CRZ2RNX is a C-shell script to recover RINEX files from Compact RINEX files.
+
+   Usage : CRZ2RNX CRINEX_files [compressed CRINEX/RINEX]
+
+           Wildcard can be used.
+           Recovered RINEX files are created into current directory.
+
+  compressed RINEX/CRINEX --> CRINEX       -->      RINEX
+       ????????.??m.Z                      -->   ????????.??m
+       ????????.??n.Z                      -->   ????????.??n
+       ????????.??o.Z                      -->   ????????.??o
+       ????????.??d.Z     --> ????????.??d -->   ????????.??o
+                              ????????.??d -->   ????????.??o
+EOF
+
+exit
+endif
+#--------------------------------------------------------------------
+
+set PROGRAM = CRX2RNX
+
+unset noclobber
+
+foreach file ($argv[*])
+
+########  uncomment the next line if you want to echo files in process
+#   echo 'processing ' $file
+
+    set file2 = $file:t
+    if( $file2:e == 'Z') set file2 = $file2:r 
+
+    set body = $file2:r
+    set extension = $file2:e
+    set yy = `echo $extension | cut -c1-2`
+
+    if($file =~ *.??[mM].Z) then
+        uncompress $file
+
+    else if($file =~ *.??[nN].Z) then
+        uncompress $file
+
+    else if($file =~ *.??[oO].Z) then
+        uncompress $file
+
+    else if($file =~ *.??[dD].Z) then
+        zcat $file | $PROGRAM - > $body.$yy'o'
+########  The following is an example of error handling.
+########  You may activate or custamize it as you like.
+#       if($status == 1) then
+#           rm $body.$yy'o'
+#           continue
+#       endif
+
+    else if($file =~ *.??[dD]) then
+        cat  $file | $PROGRAM - > $body.$yy'o'
+########  see above
+#       if($status == 1) then
+#           rm $body.$yy'o'
+#           continue
+#       endif
+
+    else
+    endif
+end

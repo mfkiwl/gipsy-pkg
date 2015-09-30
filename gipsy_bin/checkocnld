@@ -1,0 +1,22 @@
+#!/bin/bash
+# This script is used to check whether the ocean load coefficient for **** site need to be downloaded"
+# Q.Yang Oct-18=2012
+if [ $# -lt 1 ]; then
+	echo You must specify the names of sta_id file
+	exit 1
+fi
+
+ocnld=~/ocnld_coeffs
+idfile=$1
+
+line=$(find $idfile -print0 | xargs -0 wc -l | awk '{print $1}')
+for ((i=1;i<=$line;i++))
+do
+	NAME=$(sed -n ''$i'p' $idfile | awk '{print $1}')
+	test=$(grep $NAME $ocnld)
+	if [ -z "$test" ]
+	then 
+		echo "The ocean load coefficient should be put in $ocnld for site $NAME"
+	fi
+done
+

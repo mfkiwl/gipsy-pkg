@@ -1,0 +1,301 @@
+#!/bin/csh -f
+#
+# --------------- Q.Yang in 09/19/2012 ----------------------------
+#
+# Perform static precise point positioning (PPP) using GOA's gd2p.pl 
+# And get ambiguity resolution in gd2p.pl
+# Orbits data is obtained from JPL
+#
+set nonomatch
+if ( ! $#argv || "$1" == "-H" || "$1" == "-h" || "$1" == "help" ) then
+	echo "Usage: gd2p_zap_s rnxfile -save  [flags...]"
+	if ( ! $#argv ) then
+		echo 'For additional help type: gd2p_zap_jpls help'
+		exit 1
+	endif
+	echo "Purpose: Performs Static PPP by gd2p.pl and  with/without JPL-style "smapper" ambiguity resolution"
+    echo "Arguments: rnxfile = rinex file, which may be compressed/compact"
+	echo "           -save = save work directory for inspection"
+	echo "           flags = flags for gd2p.pl (type gd2p.pl for options)"
+    echo "                    For example, -ion_2nd (not generally recommended)"
+	echo "Note: station name, date and coordinates are taken from the rinex file"
+	echo "Note: if not flags, then assumes default for gd2p.pl except that.."
+    echo "  -wetzgrad 5.0e-9  : troposphere gradients estimated"
+	echo "  -flag_qm          : qmfile is flagged for outliers (for rinex/.qm)"
+	echo "  -flag_brks_qm     : qmfile is flagged for cycle slips (for rinex/.qm)"
+	echo "  -pb_min_slip 7.E-5: postbreak cycle slips (20.E-5 for -legacy)"
+	echo "  -w_elmin 7        : elevation mask degrees (15 for -legacy)"
+	echo "  -trop_z_rw 5.0E-08: random walk tropo (1.7D-07 for -legacy)"
+	echo "  -trop_map GMF     : GMF mapping function (Neil for -legacy)"
+	echo "                    : NOTE: this version does NOT apply -ion_2nd"
+	echo "  -arp              : don't use phase centers (do use p.c. for -legacy)"
+	echo "  -add_ocnld        : apply ocean loading model + companion tides using"
+	echo '                     $GOA_LOCAL/ocload/SSSS.ocl (not for -legacy)'
+    exit
+endif
+
+set rnx_file = $1
+shift
+
+if ( ! -r "$rnx_file" ) then
+	echo "Error: cannot read rinex file: $rnx_file"
+	exit 1
+endif
+
+
+if ( "$1" == "-save" ) then
+	shift 
+	set save_work
+	echo "-save: Will save the gd2p.pl working directory"
+endif
+
+if ( $#argv > 0 ) then
+		set flags = ( $* )
+		echo "will apply gd2p.pl flags: "$flags
+else
+	set flags = ""
+	echo "No gd2p_pl flags specified: using gd2p_zap _jpls defaults"
+endif
+
+# If file is not local, make a link
+if ( ! -e ./$rnx_file:t ) then
+	ln -sf $rnx_file .
+	set rnx_file = $rnx_file:t
+endif
+
+set rnx_file_orig = $rnx_file
+set rnx_file = `crz2rnx -echo $rnx_file`
+
+# get time of data for use n making file names for the results
+set datr_n = ( `rnx_time $rnx_file` )
+
+# check date against rinex file name
+set doy = `echo $rnx_file | cut -c5-7`
+set yy = `echo $rnx_file | cut -c10-11`
+@ fyy = `echo $yy | awk '$1+=0'`
+  if ( $fyy >= 80 ) then
+	  set yyyy = 19$yy
+  else
+	  set yyyy = 20$yy
+  endif
+  set fdate = ( `doy2cal $yyyy $doy | cl  3-5 | cut -c 3-` )
+  if ( $fdate[2] < 10 ) set fdate[2] = "0$fdate[2]"
+  if ( $fdate[3] < 10 ) set fdate[3] = "0$fdate[3]"
+  if ( ( $fdate[1] != $datr_n[1] ) || \
+	 ( $fdate[2] != $datr_n[2] ) || \
+	 ( $fdate[3] != $datr_n[3] ) ) then
+	 echo2 "Error: date in filename does not match first data point"
+	 echo2 " - file may have wrong name, or data may cross midnight"
+	 set gotERR
+	 goto cleanup
+   endif
+
+# construct date for file name
+  @ yyn = `echo $datr_n[1] | awk '$1+=0'`
+  if ( $yyn >= 80 ) then
+	  set datr_n[1] = 19$datr_n[1]
+  else
+	  set datr_n[1] = 20$datr_n[1]
+  endif
+
+  set datr_c = `cal2sec $datr_n[1] $datr_n[2] $datr_n[3] | sec2yymmmdd -`
+  set datr_i = "$datr_n[1]-$datr_n[2]-$datr_n[3]"
+
+# get station name from rinex file name
+  set sta = `echo $rnx_file | cut -c-4 | tr a-z A-Z`
+  
+# make working directory
+  set work = $datr_c$sta.work
+  if (-d $work) then
+	  echo2 ERROR- pre-existing work directory.  Please remove it.
+	  exit 2
+  endif
+
+  mkdir $work
+  cd $work
+  ln -s ../$rnx_file .
+
+#set ocfile = "$GOA_LOCAL/ocload/$sta.ocl"
+#if ( -e $ocfile ) then
+#	set ocload
+#	set oceanload = "FES2004"
+#	else
+#		set oceanload = "no"
+#endif
+
+# extract sta_info from rinex header
+#  rnx2sta_pos2 $rnx_file > sta_pos
+#  set pstat=$status
+#  rnx2sta_svec2 -arp $rnx_file > sta_svec
+#  set sstat=$status
+#  rnx2sta_id $rnx_file > sta_id
+#  set istat=$status
+#  if ($pstat || $sstat || $istat) then
+#	  echo2 error extracting information from rinex header
+#	  set gotERR
+#	  goto cleanup
+#  endif
+
+# prepare sta_info files
+ cp ~/sta_id .
+ cp ~/sta_pos .
+ cp ~/sta_svec .
+ cp ~/ocnld_coeffs .
+ ln -s $GOA_VAR/sta_info/pcenter .
+
+# fetch orbits to local directory
+  mkdir orbits
+  cd orbits
+#  setenv ORB_CACHE /GPS/JPLorbits/Final
+#  echo $datr_c
+  fetch_orbits_yang $datr_c >& /dev/null
+#  set err = $status
+#  if ( $err ) then
+#	  echo 'Error: failed to fetch orbits from cache'
+#	  set gotERR
+#	  goto cleanup
+#  endif
+
+  echo "Using precise (fiducial-free) orbits from $ORB_CACHE"
+  set orbitype = "flinnR_nf $PWD"
+  set orbitdir = "$PWD"
+
+  if ( $?rapid ) then
+	  echo "ERROR: use of rapid orbits is not yet implemented  by gd2p_zap_jpls"
+	  goto cleanup
+  endif
+
+  cd ..
+
+#----------------------------------------------------------------------------------
+# Now read the antenna type from sta_svec file
+  set ayear = `echo $datr_i | cut -c1-4`
+  set amon = `echo $datr_i | cut -c6-7`
+  set adate = `echo $datr_i | cut -c9-10`
+  set rnxtime = `echo $ayear $amon $adate| gawk '{printf ("%4.4f",$1+$2/12+$3/365)}'`
+  grep $sta ./sta_svec | gawk '{printf ("%4.4f %s %s\n",$3+$4/12+$5/365,$1,$8)}' > antfile
+  replace $sta $rnxtime antfile
+  sort -r +0 -1 antfile
+  set antcode = `more ./antfile | gawk '{if ( $1 <= $2 ) print $3}' | awk NR==1`
+  set ant = `grep ${antcode}_ANT ~/gipsy_bin/code2ant | gawk '{print $1}'`
+  set rad = `grep ${antcode}_ANT ~/gipsy_bin/code2ant | gawk '{print $2}'`
+#----------------------------------------------------------------------------------
+# Now make antenna calibration files
+set anxfile =  $GOA_ETC/antenna_cals_xmit/igs08_1645.atx
+#( antex2xyz.py -antexfile $anxfile \
+#     -anttype $ant \
+#	 -recname $sta \
+#	 -radcode $rad \
+#	 -xyzfile $sta.xyz \
+#	 -fel 0 -del 5 -daz 5 -extrap \
+#	 > antex2xyz.log ) >& antex2xyz.err
+
+( antex2xyz.py -antexfile $anxfile \
+     -anttype $ant \
+	 -recname $sta \
+	 -radcode $rad \
+	 -xyzfile $sta.xyz \
+	 > antex2xyz.log ) >& antex2xyz.err
+
+#----------------------------------------------------------------------------------
+#Now run gd2p.pl
+( gd2p.pl -i $rnx_file -d $datr_i -n $sta -sta_info $PWD -orb_clk "$orbitype" -arp -add_ocnld " -c $PWD/ocnld_coeffs" -OcnldCpn -tides WahrK1 PolTid FreqDepLove OctTid -trop_map VMF1GRID -vmf1dir /GPS/VMF1 -AntCal ./$sta.xyz -wetzgrad 5.0E-9 -trop_z_rw 5E-8 -w_elmin 7 -stacov -pb_min_slip 10E-5 -post_wind 2.5e-3 2.5e-5 -exclude L1C L2C L1P L2P -flag_qm -flag_brks_qm  -amb_res 1 > gd2p.log ) >& gd2p.err
+ 
+#( gd2p.pl -i $rnx_file -d $datr_i -n $sta -sta_info $PWD -orb_clk "$orbitype" -arp -add_ocnld " -c $PWD/ocnld_coeffs" -OcnldCpn -tides WahrK1 PolTid FreqDepLove OctTid -trop_map GMF -AntCal ./$sta.xyz -wetzgrad 5.0E-9 -trop_z_rw 5E-8 -w_elmin 7 -stacov -pb_min_slip 10E-5 -post_wind 2.5e-3 2.5e-5 -exclude L1C L2C L1P L2P -flag_qm -flag_brks_qm -amb_res 1 > gd2p.log ) >& gd2p.err
+ #---------------------------------------------------------------------------------
+  
+  if ( $status ) then
+	  echo "Error: gd2p.pl failed"
+	  echo2 "ERROR see log files ${datr_c}$sta.log and ${datr_c}$sta.err"
+	  set gotERR
+	  cd ..
+	  goto cleanup
+  endif
+# delete empty stacov files
+  if ( ! ( -e stacov_final ) ) then
+	  echo "Error: no output file: stacov_final"
+	  set gotERR
+	  cd ..
+	  goto cleanup
+  endif
+  empty_stacov delete stacov_final
+  if ( ! ( -e stacov_final ) ) then
+	  echo "Error: no output file: stacov_final"
+	  set gotERR
+	  cd ..
+	  goto cleanup
+  endif
+#
+# save namelists
+  if (-e qregres.nml && -e wash.nml) then
+	  cat qregres.nml wash.nml | gzip -3 > ../${datr_c}${sta}.nml.Z
+  endif
+#
+# save DRYZTROP nomina
+  if (-e qregres.nml) then
+	  cat qregres.nml | grep DRY | awk -v sta=$sta '{print sta" "$4}' > ../${datr_c}$sta.dry
+  endif
+#
+# save sta_id, sta_pos, and sta_svec
+  cp sta_pos  ../$datr_c$sta.sta_pos
+  cp sta_id   ../$datr_c$sta.sta_id
+  cp sta_svec ../$datr_c$sta.sta_svec
+#
+  if ( -e tdp_final) then
+	  cat tdp_final | gzip -3 > ../${datr_c}${sta}.tdp.Z
+  endif
+
+  if ( -e $rnx_file:r.${yy}S ) then
+	  cp $rnx_file:r.${yy}S ../$datr_c$sta.teqc
+  endif
+
+# Now write an smcov file with the SAVED = "EPOCH+PHASE" option for ambigon2
+# smap4fix accume.nio smooth.nio SMCOV >& smap4fix.log
+# cp SMCOV ../${datr_c}$sta.smcov
+# cp qmfile ../${datr_c}$sta.qm
+
+set f = "${datr_c}${sta}_free.stacov"
+cp stacov_final ../$f
+cd ..
+
+# gzip -f -3 -S .Z ${datr_c}$sta.smcov ${datr_c}$sta.qm
+#
+# apply x-files
+# if (-e XFILE) then
+# set frame = `tail -n1 XFILE | awk '{print $(NF-2)}'`
+# set fn = $f:r
+cp $orbitdir/*.x.gz .
+gunzip ./*.x.gz
+/GPS/GOA/goa-6.1.2-64/bin/project -i ${datr_c}${sta}_free.stacov -o ${datr_c}${sta}_free.project -e 3.0 >/dev/null
+/GPS/GOA/goa-6.1.2-64/bin/apply -x *.x -i ${datr_c}${sta}_free.project -o ${datr_c}${sta}_fix.stacov1 -t -r -s -cv
+rm ${datr_c}${sta}_free.project
+/GPS/GOA/goa-6.1.2-64/bin/statistics -r ${datr_c}${sta}_fix.stacov1 -gd
+#  apply -x XFILE -i $f -o $fn.$frame.stacov -r -t -s > /dev/null
+#  endif
+#  
+#  label stacov file if rapid orbits have been used
+if ( $?rapid ) then
+	set fn = $f:r
+	ln -sv $f $fn.rapid.stacov
+endif
+#
+# apply any custom x-files found
+foreach customx ( XFILE.* )
+  if ( "$customx" == 'XFILE.*' ) break
+	  set frame = "$customx:e"
+	  set fn = $f:r
+	  /GPS/GOA/goa-6.1.2-64/bin/apply -x $customx -i $f -o $fn.$frame.stacov -r -t -s > /dev/null
+  end
+  rm -f XFILE*
+
+cleanup:
+if ( -e $work/gd2p.log ) cp $work/gd2p.log ${datr_c}$sta.log
+if ( -e $work/gd2p.err ) cp $work/gd2p.err ${datr_c}$sta.err
+
+if ( ! ( $?save_work ) ) then
+    rm -rf $work
+	rm *.??o
+	if ($rnx_file != $rnx_file_orig) rm -f $rnx_file
+endif
+
+if ($?gotERR) exit 1

@@ -1,0 +1,147 @@
+#!/bin/csh -f
+#  Fixed bug when applied to multiple rinex files - G. Blewitt 2005-04-27
+#  Added capability of detecting Trimble Zephyr antennas 2006-11-20
+#  Also fixed bug when no antenna height is found in file.
+#
+# ADD_STA_SVEC
+#
+# Script to add station site vectors to sta_info/sta_svec.
+# N.E. King
+# October 1993
+# December 1993:  Modified to look for names in GIPSY format.
+# Oct 1995 Adopted and Modified by Ken Hurst
+#
+#$Id: rnx2sta_svec,v 3.8 2003/06/13 17:49:09 kjm Exp $
+#                 Account for possible year and month changes in calculation of time duration.
+
+if ($#argv < 1 || $1 == '-H' ) then
+  echo2 'rnx2sta_svec [-hi antenna_height(m) ] rnx_file1 rnx_file2....'
+  echo2 '   writes sta_svec entry to stdout'
+  exit 1
+endif
+
+if ($1 == '-hi') then
+  set hi = $2
+# bug fix - G.B.
+  set fixhi
+  shift; shift
+endif
+
+if ( ! -r $1 ) then
+  echo2 'rnx2sta_svec [-hi antenna_height(m) ] rnx_file1 rnx_file2....'
+  echo2 '   writes sta_svec entry to stdout'
+  echo2 "can not read $1"
+  exit 1
+endif
+
+set tmpf1=tmpf1_rnx2sta_svec.$$
+foreach file ($*)   # FOR EACH RINEX FILE, CONSTRUCT LINE FOR STA_SVEC
+   set tmpf1 = `crz2rnx -echo $file`
+
+#   set sta = `grep -i 'MARKER NAME' $tmpf1 | head -1 | awk '{ printf "%4.4s\n",$1 }' | sed 's/ /=/g' | sed '/.*/y/abcdefghijklmnopqrstuvwxyz/ABCDEFGHIJKLMNOPQRSTUVWXYZ/'`                         # 4-character station code
+   set sta = `rnx_markerID $tmpf1`
+  
+   if (`echo $sta | wc -c` != 5) then
+     echo2 error- Marker name is not 4 characters ($sta)
+     exit 2
+   endif
+
+   set rindate = `rnx_time $tmpf1 | awk '{ printf "%2.2d %2.2d %2.2d %2.2d %2.2d %2.2d\n",$1,$2,$3,$4,$5,$6 }'`   # Start time
+
+   set year2 = $rindate[1]
+   @ yearst=$year2 + 1900 
+   if ($yearst < 1980 ) then
+     @ yearst += 100
+   endif
+
+   set most = $rindate[2]
+
+   set dayst = $rindate[3]
+##   echo2 Start day is $dayst
+
+   set hrst = $rindate[4]
+##   echo2 Start hour is $hrst
+
+   set minst = $rindate[5]
+##   echo2 Start minute is $minst
+
+   set secst = $rindate[6]
+##   echo2 Start sec is $secst
+
+   set sttime = `echo {$yearst} {$most} {$dayst} {$hrst}:{$minst}:${secst}.00`
+##   echo2 STTIME is $sttime
+
+   set rend = `rnx_time $tmpf1 | awk '{print $7,$8,$9,$10,$11,$12}'`
+##   echo2 rend = $rend
+   echo2 $file $rindate - $rend
+   set yearend = $rend[1]
+   @ yeare4 = $yearend + 1900
+   if ($yeare4 < 1980 ) then
+     @ yeare4 += 100
+   endif
+
+   set moend = $rend[2]
+   set daend = $rend[3]
+   set hrend = $rend[4]
+   set minend = $rend[5]
+   set secend = `echo $rend[6] | awk '{printf "%d\n",$1}'`
+##   echo2 End year is $yearend
+##   echo2 End month is $moend
+##   echo2 End day is $daend
+##   echo2 End hour is $hrend
+##   echo2 End minute is $minend
+##   echo2 End second is $secend
+   set stjsec = `cal2sec $yearst $most $dayst $hrst $minst $secst`
+   set stpjsec = `cal2sec $yeare4 $moend $daend $hrend $minend $secend`
+   set temp = `echo $stjsec $stpjsec | awk '{print $2-$1}'`
+   set valtime = `echo $temp | awk '{printf "%11.2f\n",$1}' | sed 's/ /=/g'`
+##   echo2 VALTIME is $valtime
+   rm -f /tmp/temp.$$
+
+# Eccentricity - assume zeroes
+   set ecc = "0.0000" 
+
+#   if (! $?hi) then
+# Bug fix - G.B.
+   if (! $?fixhi) then
+     set hi = `grep -i 'ANTENNA: DELTA H/E/N' $tmpf1 | head -1 | awk '{ print $1 }'`                 
+   endif
+   if ( $hi == "" ) then
+     set hi = 0.0
+   endif
+   set hi = `echo $hi | awk '{printf "%10.4f\n",$1}' | sed 's/ /0/g' | sed 's/000-/-000/'`
+
+   set flag = "l"                                                                    # Flag "l" or "c" - assume "l"
+
+   set datedone = `date +'%Y %m %d'`                                                             # Date entry created
+
+   set creator = "rnx2sta_svec %I% `whoami`"                                                      # Creator - assume "addstasvec"
+#
+# ** The following needs to be fixed **
+#
+# Assume antenna type is ROGUE_T (in $GOA_STA_INFO/pcenter)
+# *except* if antenna type in rinex file is given as "TRM41249.00"
+# which corresponds to TRIM-ZPHR.
+# This is a reasonable band-aid to deal with mixed choke-ring/zephyr networks
+# as in BARGEN/MAGNET.
+   if ( `grep -m 1 "ANT #" $tmpf1 | grep -m 1 "TRM41249.00" | wc -l` ) then  
+      set antype = "TRIM-ZPHR"
+   else
+      set antype = "ROGUE_T  "
+   endif
+   echo " $sta $sta $sttime  $valtime $antype      $ecc     $ecc     $ecc $hi $flag $datedone $creator" >> /tmp/addstasvec.$$
+
+   if ($tmpf1 != $file) then
+     rm -f $tmpf1
+   endif
+end
+
+mv /tmp/addstasvec.$$ /tmp/temp.$$
+sed 's/=/ /g' /tmp/temp.$$ > /tmp/addstasvec.$$                        # CHANGE LEADING AND TRAILING = TO BLANKS
+
+cat /tmp/addstasvec.$$
+
+# CLEAN UP
+
+rm -f /tmp/temp.$$ 
+rm -f /tmp/addstasvec.$$

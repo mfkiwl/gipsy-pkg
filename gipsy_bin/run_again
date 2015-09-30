@@ -1,0 +1,11 @@
+#!/bin/csh -f  
+
+#The following environment variables were active:
+#setenv GOA /GPS/GOA/goa-6.1.2-64
+
+#You may need the following source command to set your PATH if you have changed it
+#source  /GPS/GOA/goa-6.1.2-64/rc_gipsy.csh
+( gd2p.pl \
+      -help \
+ > gd2p.log ) |&  sed '/^Skipping namelist/d' > gd2p.err 
+

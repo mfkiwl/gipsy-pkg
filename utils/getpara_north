@@ -1,0 +1,46 @@
+#!bin/bash
+
+# y=a+offset+b*t+c*t*t/2+d*sin(2p*t)+e*cos(2p*t)+f*sin(4pi*t)+g*cos(4pi*t)
+
+for file in $(ls *.info)
+do
+staname=$(echo $file | cut -c1-4)
+mark=$(grep -n "The model parameter for east are" $file | awk -F: '{print $1}')
+mark2=$(grep -n "The model parameter for north are" $file | awk -F: '{print $1}')
+ma_a=$(expr $mark2 + 1)
+ma_b=$(expr $mark - 6)
+ma_c=$(expr $mark - 5)
+ma_d=$(expr $mark - 4)
+ma_e=$(expr $mark - 3)
+ma_f=$(expr $mark - 2)
+ma_g=$(expr $mark - 1)
+
+a=$(sed -n ''$ma_a'p' $file)
+b=$(sed -n ''$ma_b'p' $file)
+c=$(sed -n ''$ma_c'p' $file)
+d=$(sed -n ''$ma_d'p' $file)
+e=$(sed -n ''$ma_e'p' $file)
+f=$(sed -n ''$ma_f'p' $file)
+g=$(sed -n ''$ma_g'p' $file)
+
+mu=$(grep -n "The model parameter uncertainties for east are" $file | awk -F: '{print $1}')
+mu2=$(grep -n "The model parameter uncertainties for north are" $file | awk -F: '{print $1}')
+mau_a=$(expr $mu2 + 1)
+mau_b=$(expr $mu - 6)
+mau_c=$(expr $mu - 5)
+mau_d=$(expr $mu - 4)
+mau_e=$(expr $mu - 3)
+mau_f=$(expr $mu - 2)
+mau_g=$(expr $mu - 1)
+
+ua=$(sed -n ''$mau_a'p' $file)
+ub=$(sed -n ''$mau_b'p' $file)
+uc=$(sed -n ''$mau_c'p' $file)
+ud=$(sed -n ''$mau_d'p' $file)
+ue=$(sed -n ''$mau_e'p' $file)
+uf=$(sed -n ''$mau_f'p' $file)
+ug=$(sed -n ''$mau_g'p' $file)
+
+echo $staname $a $ua $b $ub $c $uc $d $ud $e $ue $f $uf $g $ug >> fitpara_north.txt 
+
+done

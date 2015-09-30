@@ -1,0 +1,50 @@
+#!/bin/bash
+# Q.Yang 08/26/2014
+# transfer daily solution to NA12
+#echo $$>j.num.$$
+if [ $# -lt 2 ];then
+   echo You must specify the start and end year
+   exit 1
+fi
+st_yr=$1
+et_yr=$2
+dir=/data1/yang/Process/greenland
+out=/data1/yang/Process/greenland_na12
+
+#for site in $(grep qian ~/COM_stainfo/sta_id_greenland | awk '{print $1}'); do
+#mkdir $site
+#cd $site
+#    for i in `seq $st_yr $et_yr`; do
+#        cp $dir/$i/*/*/*/*$site*_free.stacov .
+#    done
+#cd ..
+#mv $site $out
+#done
+
+for site in $(grep qian ~/COM_stainfo/sta_id_greenland | awk '{print $1}'); do
+    cd $out/$site
+    for file in `ls *_free.stacov`; do
+        name=$(echo $file | cut -c1-11)
+        yr=$(echo $file | cut -c1-2)
+        if [ $yr -gt 90 ]; then
+           year=19$yr
+        else
+           year=20$yr
+        fi
+        yue=$(echo $file | cut -c3-5)
+        mo=`echo $yue | awk '{if ($1 == "JAN") {mm=01} else if ($1 == "FEB") {mm=02} else if ($1 == "MAR") {mm=03} else if ($1 == "APR") {mm=04} else if ($1 == "MAY") {mm=05} else if ($1 == "JUN") {mm=06} else if ($1 == "JUL") {mm=07} else if ($1 == "AUG") {mm=08} else if ($1 =="SEP") {mm=09} else if ($1=="OCT") {mm=10} else if ($1 == "NOV") {mm=11} else {mm=12} print mm}'`
+        mo=`echo $mo | awk '{printf "%02i",$1}'`
+        day=$(echo $file | cut -c6-7)
+        date=$year-$mo-$day
+        Xfile=$date.NA12.x.gz
+        cp /GPS/JPLorbits/Final/$year/$Xfile .
+        gunzip $Xfile
+        /GPS/GOA/goa-6.1.2-64/bin/project -i $file -o ${name}_free.project -e 3.0 >/dev/null
+        /GPS/GOA/goa-6.1.2-64/bin/apply -x *.x -i ${name}_free.project -o ${name}_na12.stacov1 -t -r -s -cv
+        /GPS/GOA/goa-6.1.2-64/bin/statistics -r ${name}_na12.stacov1 -gd
+        rm $Xfile *.x ${name}_free.project ${name}_na12.stacov1 
+    done
+    rm *_free.stacov
+    cd ..
+done
+

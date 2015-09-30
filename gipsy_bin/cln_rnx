@@ -1,0 +1,23 @@
+#!/bin/sh -x
+# file foe clean rinex data, only l1, l2, c1, p1, p2 are kept
+# yjiang, 11/27/2010
+#
+#
+
+for file in `ls *${yr}d.Z *${yr}o.Z *${yr}o *${yr}o.gz 2>/dev/null`;do
+  clnfile=`echo $file |cut -c1-11`
+  site=`echo ${clnfile}o |cut -c1-4`
+  doy=`echo ${clnfile}o |cut -c5-7`
+  decdate=`echo $year $doy |gawk '{printf"%9.4f",$1+$2/366}'`
+  type=`echo $file |cut -c12-14`
+    if [ $type = "d.Z" ];then
+      CRZ2RNX ${clnfile}d.Z
+      rm ${clnfile}d.Z
+    elif [ $type = "o.Z" ];then
+      uncompress ${clnfile}o.Z
+    elif [ $type = "o.g" ];then
+      gunzip ${clnfile}o.gz
+    fi
+  teqc +relax -R -O.obs l1+l2+c1+p2+p1 ${clnfile}o >${clnfile}o_new 2>/dev/null
+  mv ${clnfile}o_new ${clnfile}o
+done

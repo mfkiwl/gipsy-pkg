@@ -1,0 +1,90 @@
+#!/bin/bash
+# This script is used to generate sta_svec file according sta_id
+# Q.Yang Oct-16-2012
+
+if [ $# -lt 2 ]; then
+	echo You must specify the names of sta_id file and sta_svec file
+	exit 1
+fi
+
+idfile=$1
+svecfile=$2
+line=$(find $idfile -print0 | xargs -0 wc -l | awk '{print $1}')
+code2ant=~/gipsy_bin/code2ant
+
+logdir=~/logfile/cors
+
+for ((i=1;i<=$line;i++))
+do
+	NAME=$(sed -n ''$i'p' $idfile | awk '{print $1}')
+	name=$(echo $NAME | tr '[:upper:]' '[:lower:]')
+	log="$name".log.txt
+                grep -n "Antenna Type" $logdir/$log | awk -F: '{print $1}' > temp
+		num=$(find temp -print0 | xargs -0 wc -l | awk '{print $1}')
+		for ((j=$(expr $num - 1);j>=1;j--))
+		do
+			num_an=$(sed -n ''$j'p' temp)
+        		num_up=$(expr $num_an + 3)
+			num_date=$(expr $num_an + 12)
+			num_redate=$(expr $num_an + 13)
+                        num_dome=$(expr $num_an + 7)
+
+			anten=$(sed -n ''$num_an'p' $logdir/$log | awk -F: '{print $2}' | awk '{print $1}')
+			dome=$(sed -n ''$num_dome'p' $logdir/$log | awk -F: '{print $2}')
+#                        echo $num_an $anten $dome
+			antencode=$(grep "$anten" $code2ant | grep "$dome" | awk '{print $3}' | awk -F _ANT '{print $1}')
+			# If no corrections are available for a combination of an antenna with one specific radome,
+			# the value for the corresponding antenna witout a radome (radome code: NONE) are used within the IGS
+            if [ -z "$antencode" ]
+			then
+				antencode=$(grep "$anten " $code2ant | grep "NONE" | awk '{print $3}' | awk -F _ANT '{print $1}')
+			fi
+			up=$(sed -n ''$num_up'p' $logdir/$log | awk -F: '{print $2}')
+            inst=$(sed -n ''$num_date'p' $logdir/$log | awk -F: '{print $1}'| awk '{print $1,$2}')			
+			if [ "$inst" = "Date Removed" ]
+			then
+				num_date=$(expr $num_an + 11)
+				num_redate=$(expr $num_an + 12)
+			fi
+            styear=$(sed -n ''$num_date'p' $logdir/$log | awk -F: '{print $2}'| awk -F - '{print $1}')
+			stmonth=$(sed -n ''$num_date'p' $logdir/$log | awk -F: '{print $2}'| awk -F - '{print $2}')
+			stday=$(sed -n ''$num_date'p' $logdir/$log | awk -F: '{print $2}'| awk -F - '{print $3}' | awk -F T '{print $1}')
+			sthour=$(sed -n ''$num_date'p' $logdir/$log | awk -F: '{print $2}'| awk -F - '{print $3}' | awk -F T '{print $2}')
+			stmin=$(sed -n ''$num_date'p' $logdir/$log | awk -F: '{print $3}'| awk -F Z '{print $1}')
+			
+            edyear=$(sed -n ''$num_redate'p' $logdir/$log | awk -F: '{print $2}'| awk -F - '{print $1}')
+			edmonth=$(sed -n ''$num_redate'p' $logdir/$log | awk -F: '{print $2}'| awk -F - '{print $2}')
+			edday=$(sed -n ''$num_redate'p' $logdir/$log | awk -F: '{print $2}'| awk -F - '{print $3}' | awk -F T '{print $1}')
+			edhour=$(sed -n ''$num_redate'p' $logdir/$log | awk -F: '{print $2}'| awk -F - '{print $3}' | awk -F T '{print $2}')
+			edmin=$(sed -n ''$num_redate'p' $logdir/$log | awk -F: '{print $3}'| awk -F Z '{print $1}')
+				if [ -z "$sthour" ];then
+					sthour=00
+				fi
+				if [ -z "$stmin" ];then
+					stmin=00
+				fi
+				if [ -z "$edhour" ];then
+					edhour=00
+				fi
+				if [ -z "$edmin" ];then
+					edmin=00
+				fi
+            if [ "$j" -eq "$(expr "$num" - 1)" ]
+            then
+				dur=946080000.00
+			else
+				stjsec=$(cal2sec $styear $stmonth $stday $sthour $stmin 00)
+				edjsec=$(cal2sec $edyear $edmonth $edday $edhour $edmin 00)
+                dur="$(echo $stjsec $edjsec | awk '{print $2-$1}')".00
+			fi
+			time=$(echo $styear $stmonth $stday $sthour:$stmin:00.00)
+			curyear=$(date | awk '{print $6}')
+			curmon=$(date | awk '{print $2}')
+			curday=$(date | awk '{print $3}')
+			vel=".0000"
+			commend="l qian $curyear $curmon $curday Ant:$anten Dom:$dome"
+            printf " $NAME $NAME $time %12s %-15s $vel      $vel      $vel     %1.4f $commend\n" "$dur" "$antencode" "$up" >> $svecfile
+		done  
+		rm temp
+	
+done

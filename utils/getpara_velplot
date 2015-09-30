@@ -1,0 +1,39 @@
+#!bin/bash
+
+# y=a+offset+b*t+c*t*t/2+d*sin(2p*t)+e*cos(2p*t)+f*sin(4pi*t)+g*cos(4pi*t)
+if [ $# -lt 1 ];then
+   echo You must sepeciy the directory of output vel.dat
+   exit 1
+fi
+
+outdir=$1
+
+for file in $(ls *.info)
+do
+echo $file
+staname=$(echo $file | cut -c1-4)
+lon=$(grep -n "longitude" $file | awk -F= '{print $2}')
+lat=$(grep -n "Latitude" $file | awk -F= '{print $2}')
+
+len=$(awk 'END { print NR }' $file)
+len_l=$(expr $len - 2)
+len_la=$(expr $len - 4)
+echo $len_l
+echo $len_la
+# x longitude
+x=$(sed -n ''$len_l'p' $file | awk '{print $4}')
+ex=$(sed -n ''$len_l'p' $file | awk '{print $5}')
+# y latitude
+y=$(sed -n ''$len_la'p' $file | awk '{print $4}')
+ey=$(sed -n ''$len_la'p' $file | awk '{print $5}')
+co=0.00000
+
+vx=$(echo $x | awk '{printf ("%2.2f\n",$1)}')
+vy=$(echo $y | awk '{printf ("%2.2f\n",$1)}')
+vex=$(echo $ex | awk '{printf ("%2.2f\n",$1)}')
+vey=$(echo $ey | awk '{printf ("%2.2f\n",$1)}')
+#printf "%-7s %-8s %-7s %-6s %-6s %-7s\n" $staname $vx $vy $vex $vey $co>>vel.dat
+printf "%-7s %-8s %-7s %-6s %-6s %-7s\n" $staname $vy $vx $vey $vex $co>>vel.dat
+done
+
+mv vel.dat $outdir

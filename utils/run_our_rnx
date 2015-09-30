@@ -1,0 +1,24 @@
+#!/bin/sh
+echo $$>j.num.$$
+if [ $# -lt 3 ];then
+	echo You must specify the start years and end year and network name
+        echo for exmaple run 2010 2010 CORS/TX
+	exit 1
+fi
+
+for ((year=$1;year<=$2;year++))
+do
+mkdir $year
+cd $year
+for ((dy=1;dy<=60;dy++))
+do
+day=$(echo $dy | awk '{printf "%03d",$dy}')
+mkdir $year.$day
+cd $year.$day
+~/utils/get_our_rnx $day $year $3
+~/gipsy_bin/non-frame.run >& log$day.$year
+rm -rf $year.$day.log
+cd ../.
+done
+cd ../.
+done

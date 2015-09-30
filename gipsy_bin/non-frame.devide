@@ -1,0 +1,43 @@
+#!/bin/sh 
+#--------------------------------------
+# Created 7 Feb 2005 Sella
+#--------------------------------------
+# Sella 15 Jun 2005 Simplified and removed error if multi yrs
+# Sella 3 June 2005 converted dirs from yy.doy to yyyy.doy
+# Sella 25 Feb 2005 changed subfolders 
+# Sella 10 Feb 2005 simplified 
+
+
+#  echo sorry you cannot run this script
+#  echo 
+#  echo  This script will subdivide all rinex files in a given directory
+#  echo  into yyyy.doy and then place the rinex files
+#  echo  into individual directories within each year.doy 
+#  echo 
+
+frame=IGS08
+ 
+# for all the other files
+for file in `ls ????????.???.Z ????????.???.gz ????????.??o ????????.??d 2>/dev/null `;do 
+  doy=`echo $file |cut -c5-7`
+  yr=`echo $file |cut -c10-11`
+    if [ $yr -lt 20 ];then
+      year=20$yr
+    elif [ $yr -gt 92 ];then
+      year=19$yr
+    fi
+      if [ ! -d $year.$doy ];then
+        mkdir $year.$doy 
+        mv $file $year.$doy/. 
+      else
+        mv $file $year.$doy/. 
+      fi
+done
+for yyyydoy in ????.???;do
+  cd $yyyydoy/.
+     for rnxdir in `ls *d.Z *o.Z *.gz *o *d 2>/dev/null |cut -c1-11`;do
+       mkdir $rnxdir
+       mv ${rnxdir}?.Z ${rnxdir}?.gz ${rnxdir}o $rnxdir 2>/dev/null
+     done
+  cd ../.
+done

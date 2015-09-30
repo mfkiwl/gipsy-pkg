@@ -1,0 +1,13 @@
+#!bin/bash
+
+# y=a+offset+b*t+c*t*t/2+d*sin(2p*t)+e*cos(2p*t)+f*sin(4pi*t)+g*cos(4pi*t)
+
+for file in $(ls *.info)
+do
+staname=$(echo $file | cut -c1-4)
+num=$(wc $file | awk '{print $1}')
+c=$(sed -n ''$num'p' $file | awk '{print $1,$2,$3,$6}')
+echo $c
+echo $staname $c >> length_acc.txt 
+
+done

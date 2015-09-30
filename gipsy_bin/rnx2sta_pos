@@ -1,0 +1,51 @@
+#! /bin/csh -f
+# Ken Hurst August 1993
+# $Id: rnx2sta_pos,v 3.6 2003/06/13 17:49:09 kjm Exp $
+#
+# G Blewitt 4/24/2007: grep -m1 forces first record of position
+# (for spliced rinex files)
+#
+if ($#argv <1) then
+  echo Usage: rnx2sta_pos rinex_file1 ... rinex_fileN
+  echo '	generates a sta_pos type entry on stdout based on info in rinex header'
+  exit 1
+endif
+set tmpf1 = tmpf1.$$
+set tmpf2 = tmpf2.$$
+foreach i ($*)
+  if (-r $i) then
+    set tmpf2 = `crz2rnx -echo $i`
+    #zcat $i >& $tmpf2
+    #if ($status) then 
+    #  rm -f $tmpf2
+    #  ln -s $i $tmpf2
+    #endif
+    grep -m1 -i approx $tmpf2 | grep -i xyz  > $tmpf1
+    if (-z $tmpf1) then
+      echo2 ERROR: no position in file $i
+      exit 1
+    endif
+    set x = `cat $tmpf1`
+    set valid_p = `echo $x[1] $x[2] $x[3] | awk '{x=$1*$1+$2*$2+$3*$3; if (x < 6000.0) print 0; else print 1}'`
+    if (! $valid_p) then
+     echo2 'ERROR: station position given in RINEX header is inside the earth'
+     exit 2
+    endif
+    rm -f $tmpf1
+    set d = `rnx_time $tmpf2`
+    set y = `echo $d[1] | awk '{if ($1 < 1980) x=$1+1900; if(x < 1980) x=x+100; print x}'`
+    set t = 1000001.00
+    set n = `rnx_markerID $tmpf2`
+    if (`echo $n | wc -c` != 5) then
+      echo2 warning- Marker name is not 4 characters -$n-
+      set n = `echo $n | awk '{print substr($1,1,4)}'`
+      echo2 warning- Truncating name to -$n-
+    endif
+    echo $n $t $x[1] $x[2] $x[3] $y $d[2] $d[3] | awk '{printf " %4s %4d %2d %2d 00:00:00.00 %10.2f  %14.4f %14.4f %14.4f  0.00000000e+00 0.00000000e+00 0.00000000e+00  ",$1,$6,$7,$8,$2,$3,$4,$5}' 
+    echo `date +'%Y %m %d'` `whoami` rnx2sta_pos %I%
+  endif
+  rm -f $tmpf1
+  if ($tmpf2 != $i) then
+   rm -f $tmpf2
+  endif
+end

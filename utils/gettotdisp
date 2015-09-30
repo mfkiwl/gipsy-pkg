@@ -1,0 +1,35 @@
+#!bin/bash
+
+# y=a+offset+b*t+c*t*t/2+d*sin(2p*t)+e*cos(2p*t)+f*sin(4pi*t)+g*cos(4pi*t)
+if [ $# -lt 1 ];then
+   echo You must sepeciy the directory of output disp.dat
+   exit 1
+fi
+
+outdir=$1
+
+for file in $(ls *.info)
+do
+echo $file
+staname=$(echo $file | cut -c1-4)
+mark=$(wc $file | awk '{print $1}')
+mar_nor=$(expr $mark - 4)
+mar_eas=$(expr $mark - 2)
+mar_ver=$mark
+
+t1=$(sed -n ''$mar_nor'p' $file | awk '{print $1}')
+t2=$(sed -n ''$mar_nor'p' $file | awk '{print $2}')
+b_nor=$(sed -n ''$mar_nor'p' $file | awk '{print $4}')
+c_nor=$(sed -n ''$mar_nor'p' $file | awk '{print $6}')
+b_eas=$(sed -n ''$mar_eas'p' $file | awk '{print $4}')
+c_eas=$(sed -n ''$mar_eas'p' $file | awk '{print $6}')
+b_ver=$(sed -n ''$mar_ver'p' $file | awk '{print $4}')
+c_ver=$(sed -n ''$mar_ver'p' $file | awk '{print $6}')
+
+echo $staname $t1 $t2 $b_nor $c_nor $b_eas $c_eas $b_ver $c_ver
+echo $staname $t1 $t2 $b_nor $c_nor $b_eas $c_eas $b_ver $c_ver  | awk '{printf("%s%14e%14e%14e%14e\n", $1,$3-$2,($3-$2)*$4+($3-$2)*($3-$2)*$5/2,($3-$2)*$6+($3-$2)*($3-$2)*$7/2,($3-$2)*$8+($3-$2)*($3-$2)*$9/2)}' >> disp.dat
+#echo $staname $t1 $t2 $b_nor $c_nor $b_eas $c_eas $b_ver $c_ver  | awk '{printf("%s%14e\n", $1,($3-$2)*$4+($3-$2)*($3-$2)*$5/2)}' >> disp.dat
+
+done
+
+mv disp.dat $outdir

@@ -1,0 +1,20 @@
+#!/bin/sh -x
+# source ~/.cshrc
+cd ~/data/XFILE 
+
+today=`date | awk '{yr=$6;dd=$3;if ($2 == "Jan") {mm=1} else if ($2 == "Feb") {mm=2} else if ($2 == "Mar") {mm=3} else if ($2 == "Apr") {mm=4} else if ($2 == "May") {mm=5} else if ($2 == "Jun") {mm=6} else if ($2 == "Jul") {mm=7} else if ($2 == "Aug") {mm=8} else if ($2 =="Sep") {mm=9} else if ($2=="Oct") {mm=10} else if ($2 == "Nov") {mm=11} else {mm=12} print yr,mm,dd}'`
+
+echo $today
+year=$(echo $today | awk '{print $1}')
+mm=`echo $today | awk '{printf "%02d",$2}'`
+dd=`echo $today | awk '{printf "%02d",$3}'`
+doy=`echo $today | cal2doy - |cl c5`
+
+echo $year
+echo $mm
+echo $dd
+echo $doy
+
+
+cp /GPS/JPLorbits/Final/"$year"/*.NA12.x.gz .
+gunzip *.gz

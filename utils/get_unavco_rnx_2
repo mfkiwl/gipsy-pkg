@@ -1,0 +1,54 @@
+#!/bin/sh -x 
+########################################################################################
+### will download rinex/hatanaka data from unavco ftp archive for given date         ###
+### you must specify the network name the same as in /GPS/GOA/goa-var/sta_info file  ###
+########################################################################################
+
+if [ $# -lt 2 ];then
+  echo 
+  echo
+  echo You must specify the DOY and YEAR  
+  echo
+  echo This will retrieve igsb00 sites from CDDIS, SOPAC, and IGN 
+  echo for the date specified
+  echo
+  echo
+  exit 1
+fi
+
+doy=$1
+year=$2
+net=$3
+yr=`echo $year |cut -c3-4`
+decdate=$year$doy
+
+echo "Retrieving $net sites from SOPAC"
+echo "ftp -i -n garner.ucsd.edu << EOF" >get_sopac_${net}_$year
+echo "user anonymous qianyang@mail.usf.edu" >>get_sopac_${net}_$year
+echo binary >>get_sopac_${net}_$year
+echo epsv4 >>get_sopac_${net}_$year
+echo "cd /pub/rinex/$year/$doy/" >>get_sopac_${net}_$year
+  for SITE in $(grep -h qian ~/sta_id |gawk '{print $1}');do
+    site=$(echo $SITE |tr '[A-Z]' '[a-z]')
+        echo "get $site${doy}0.${yr}d.Z" >>get_sopac_${net}_$year
+  done
+echo quit >>get_sopac_${net}_$year
+echo EOF >>get_sopac_${net}_$year
+ /bin/sh ./get_sopac_${net}_$year
+
+echo "Retrieving $net sites from UNAVCO archive"
+echo "ftp -i -n data-out.unavco.org<< EOF" >get_unavco_${net}_$year
+echo "user anonymous qianyang@mail.usf.edu" >>get_unavco_${net}_$year
+echo binary >>get_unavco_${net}_$year
+echo "cd /pub/rinex/obs/$year/$doy" >>get_unavco_${net}_$year
+  for SITE in $(grep -h qian ~/sta_id |gawk '{print $1}');do
+    site=$(echo $SITE |tr "[:upper:]" "[:lower:]")
+          if [ ! -s $site${doy}0.${yr}d.Z ];then
+            echo "get $site${doy}0.${yr}d.Z" >>get_unavco_${net}_$year
+          fi
+  done
+echo quit >>get_unavco_${net}_$year
+echo EOF >>get_unavco_${net}_$year
+/bin/sh ./get_unavco_${net}_$year
+
+rm get_unavco_${net}_$year get_sopac_${net}_$year >/dev/null 2>&1

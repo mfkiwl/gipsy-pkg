@@ -1,0 +1,546 @@
+#!/bin/csh -f
+#  script to fetch precise GPS orbits and clocks from JPL
+# extensive changes by G. Blewitt 
+# -ftp option MUST be set to fetch orbits from JPL, otherwise only 
+#  looks in cache.  This makes it much faster as no ftp is used.
+#
+# modification 2007-10-11 (G. Blewitt):
+# -ftp WILL ftp, and so will never use orbit cache
+#      If not set, then will NOT ftp, and so can ONLY use orbit cache
+#
+# modification 2008-03-08 (G. Blewitt):
+#  fetch custom x-files 
+set customx = ( NA4 EU1 GB1 )
+#
+#@(#) fetch_orbits 3.15 01/25/02 Ken Hurst
+#@(#) fetch_orbits 3.16 07/09/02 Robert Meyer (fixes x-files)
+
+# To make it deal with VeryRapidService orbits:
+# cp ( or FTP ) every file from VeryRapidService, convert all eci files to jpl
+# txt files with the individual TPNML files,  cat together (in order) all
+# the jpl txt files, cat together all the tdp clock files, ( there is no
+# overlap in any of these files ).  Call tp_nml to make a tpnml
+# file ( I don't yet trust the TPNML files in the VeryRapidService ), rotate
+# the cat'ed jpl file to an eci file.  Use this eci file and the
+# cat'ed tdp clock files.  Go from there.
+
+if (! $?FLINN) setenv FLINN /Flinn
+
+# following enviroment variable is now set in $GOA/rc_gipsy.csh
+#setenv ORB_CACHE /var/opt/goa/local/ORB_CACHE
+
+#
+if ($#argv < 1) then
+  echo 'Usage fetch_orbits [-h|-H|-help] [-ftp] [-hrclk] [+fid] [+pOK] [-rapidOK] [-Tonly] [-itrfXX] yymmmdd'
+  exit 1
+endif
+
+if ("$argv[1]" == "-H" || "$argv[1]" == "-h" || "$argv[1]" == "-help") then
+  set print_help
+endif
+set nofid
+set predOK = 0
+set fid = _nf
+set get_xfile
+set need_frame = itrf05		### default frame for x-files, mod 3/3/2008
+set xf = no_file.here
+set k = 1 
+@ nsw = $#argv - 1
+while ($k <= $nsw)
+  switch ($argv[$k])
+    case -ftp
+      set ftp
+      @ k++
+    breaksw
+    case -fid
+      @ k++
+    breaksw
+    case -hrclk
+      echo2 High rate clocks requested.
+      set hrc
+      @ k++
+    breaksw
+    case -rapidOK
+      echo2 Rapid orbits OK if precise not available
+      set rapidOK
+      @ k++
+    breaksw
+    case +fid:
+      echo2 Getting FIDUCIAL orbits and clocks
+      unset nofid
+      set get_frame
+      unset get_xfile
+      @ k++
+    breaksw
+    case +pOK:
+      set predOK = 1
+      unset get_xfile
+      @ k++
+    breaksw
+    case -Tonly:
+      set Tonly
+      @ k++
+    breaksw
+    case -itrf94
+      set need_frame = itrf94
+      @ k++
+    breaksw
+    case -itrf96
+      set need_frame = itrf96
+      @ k++
+    breaksw
+    case -itrf97
+      set need_frame = itrf97
+      @ k++
+    breaksw
+    case -igs97
+      set need_frame = igs97
+      @ k++
+    breaksw
+    default:
+      echo2 ERROR - unrecognized switch $argv[$k]
+      set print_help
+      @ k++
+    breaksw
+  endsw
+end
+if ($?print_help) then
+cat << EnD_Help
+Usage fetch_orbits [-ftp] [-hrclk] [+fid] [+pOK] yymmmdd
+
+    If -ftp set, uses anonymous FTP to connect to sideshow.jpl.nasa.gov
+    and retrieve precise orbits and clocks for use with GIPSY-OASIS II.
+    Otherwise, if -ftp is not set, then use local cache (recommended for
+    routine processing, as -ftp is slow, even if data is actually cached).
+
+    By default, it will get non-fiducial orbits if they are available. 
+    When it gets non-fiducial orbits, it will also get a transformation
+    file to use with apply to put a non-fiducial solution into a known
+    refrence frame.
+    If final orbits are available (ie from the Flinn analysis), these 
+    orbits will be the ones retrieved. If the final orbits are not yet 
+    available, orbits from the Rapid Service will be retrieved.
+
+    The retrieved orbits and ancillary information can be  cached in a local
+    area $ORB_CACHE (set by environment variable ORB_CACHE).
+    If your internet connection is slow, and you need the same orbits
+    for several stations, you may benefit from creating a direcory for 
+    a local orbit cache. If you have a cache, a given set of orbits
+    will only be FTPed once than once for every rinex
+    file.  
+
+        -ftp		Use ftp to sideshow.jpl.nasa.gov if not in cache (slow)
+	-hrclk		Get high-rate (currently 30 sec) GPS clocks.
+			Default is 300 sec GPS clocks.
+	+fid		Get fiducial orbits.
+			By default, non-fiducial orbits will be retrieved
+			if they are available. If only fiducial orbits
+			are available, then a message is printed and the
+			fiducial orbits will be retrieved.
+	+pOK		It is OK to get predicted orbits if no others are
+			available yet. By default, predicted orbits are not OK.
+			Since no clocks will be available for this time,
+			no transformation file will be retrieved.
+	-Tonly		only get transformation file (not yet implemented)
+	-itrfXX		get transformation from free-network to itrfXX 
+			if available
+
+
+    After retrieving everything, the files are uncompressed, massaged if 
+    necessary, and given names xt-gipsy will recognize.
+
+    Returns 0 if sucessful, non-zero otherwise.
+
+
+EnD_Help
+  exit 1
+endif
+#check if .netrc is ready
+if (! -e ~/.netrc) then
+  set me = `whoami`
+  set what = `uname -n`
+  set where = `grep $what /etc/hosts | awk '{print $2}'`
+  echo machine sideshow.jpl.nasa.gov login anonymous password $me@$where > ~/.netrc
+  chmod 600 ~/.netrc
+  echo2 Made a ~/.netrc file for you'  :-)'
+endif
+set s = `grep sideshow ~/.netrc | wc -l`
+if (! $s) then
+  set me = `whoami`
+  set what = `uname -n`
+  set where = `grep $what /etc/hosts | awk '{print $2}'`
+  echo2 Add this line to your ~/.netrc file' and try again:'
+  echo2 ' '
+  echo2 machine sideshow.jpl.nasa.gov login anonymous password $me@$where
+  exit 2
+endif
+
+set day = `echo $argv[$#argv] | perl -pe 'tr/A-Z/a-z/'`
+set DAY = `echo $argv[$#argv] | perl -pe 'tr/a-z/A-Z/'`
+
+set tmpf1 = tmpf1_fetch_data.$$
+set tmpf2 = tmpf2_fetch_data.$$
+set tmpf3 = tmpf3_fetch_data.$$
+set tmpf4 = tmpf4_fetch_data.$$
+rm -f $tmpf1 $tmpf2 $tmpf3 $tmpf4 REFERENCE.FRAME Shadow TDPfile tpeo.nml
+rm -f XFILE*  >& /dev/null
+touch $tmpf4
+
+set kk = 0
+set s = 0
+while(! $s && $kk < 4)
+
+  set a = `yymmmdd2sec $day | awk '{printf "%18.4f\n",$1-a*86400.0}' a=$kk | sec2cal - `
+  set tsec = `yymmmdd2sec $day`
+  set y = $a[1]
+  set m = `echo $a[2] | awk '{printf "%2.2d",$1}'`
+  set d = `echo $a[3] | awk '{printf "%2.2d",$1}'`
+  set ndate = ${y}-${m}-$d
+
+# Make a list of what is available for this date
+# The order is important here. We will read from the top, so the preferable
+# orbits, clocks, and x-files should be first. (eg retro, then regular, then
+# RapidService.) The orbits and x-files should be a compatible set.
+ if ( $?ftp ) then
+  echo 'ftp sideshow.jpl.nasa.gov << EnD >' $tmpf1 > $tmpf2
+  echo ls /pub/gipsy_products/retro/$y/orbits/${ndate}'*' >> $tmpf2
+  echo ls /pub/gipsy_products/retro/$y/clocks/${ndate}'*' >> $tmpf2
+  echo ls /pub/gipsy_products/$y/orbits/${ndate}'*' >> $tmpf2
+  if ($?hrc) then
+    echo ls /pub/gipsy_products/hrclocks/${ndate}'*' >> $tmpf2
+  else
+    echo ls /pub/gipsy_products/$y/clocks/${ndate}'*' >> $tmpf2
+  endif
+  echo ls /pub/gipsy_products/RapidService/orbits/${ndate}'*' >> $tmpf2
+  echo ls /pub/gipsy_products/x-files/$need_frame/retro/${day}.'*'.x >> $tmpf2
+  echo ls /pub/gipsy_products/x-files/$need_frame/retro/${ndate}'*' >> $tmpf2
+  echo ls /pub/gipsy_products/x-files/$need_frame/${day}.'*'.x >> $tmpf2
+  echo ls /pub/gipsy_products/x-files/$need_frame/${ndate}'*' >> $tmpf2
+  echo ls /pub/gipsy_products/x-files/${day}.'*'.x >> $tmpf2
+  echo ls /pub/gipsy_products/x-files/${ndate}'*' >> $tmpf2
+  echo quit >> $tmpf2
+  echo EnD >> $tmpf2
+#
+# execute the ftp command
+  csh -f $tmpf2
+#
+# else if -ftp is not set, then get listing from cache
+ else
+  ( ls $ORB_CACHE/$y/${ndate}* >> $tmpf1 ) >& /dev/null
+  ( ls $ORB_CACHE/$y/${ndate}* >> $tmpf1 ) >& /dev/null
+  ( ls $ORB_CACHE/${day}.*.x $ORB_CACHE/${ndate}* $ORB_CACHE/${day}.*.x $ORB_CACHE/${ndate}* >> $tmpf1 ) >& /dev/null
+ endif
+  @ kk++
+  if (! $predOK) set kk = 10 
+  set s = `grep -v directory $tmpf1 | grep -iv 'not found' | wc -l`
+#
+# find custom xfiles
+  if ( $?customx ) then
+     foreach x ( $customx )
+       ( ls $ORB_CACHE/x-files/$x/${DAY}.$x.x >> $tmpf4 ) >& /dev/null 
+     end
+  endif
+end
+
+
+if (! $s) then
+  echo "Warning: No precise orbits are available for $day"
+  if ( ! $?rapidOK ) then
+    rm -f $tmpf1 $tmpf2 $tmpf3 $tmpf4
+    exit 1
+  endif
+endif
+
+if ($kk > 1 && $kk < 5 ) then
+  set predict
+  set fid = .predict
+  echo2 'Getting PREDICTED FIDUCIAL orbits (no clocks)'
+  unset get_xfile
+  set get_frame
+endif
+
+set s = `grep _nf $tmpf1 | wc -l`
+if ($fid == "_nf" && $s == 0 ) then
+  if ($?nofid) then
+    echo2 "Warning: Non-fiducial orbits for $day are not available yet"
+    if ( ! $?rapidOK ) then
+      rm -f $tmpf1 $tmpf2 $tmpf3 $tmpf4
+      exit 3
+    endif
+  endif
+  echo2 NON-FIDUCIAL orbits are not available on $day. Will get fiducal orbits.
+  set fid
+endif
+
+set orb_typ = ` grep orbits $tmpf1 | grep -v 'No such file' | grep -v 'not found' | grep -iv directory | head -1 | awk 'BEGIN{FS="/"}{print $4}'`
+
+awk '{print $NF}' $tmpf1 > $tmpf3
+mv $tmpf3 $tmpf1
+
+switch ($orb_typ)
+  case RapidService:
+    set rapid
+    unset get_xfile
+    echo2 Getting Rapid Service precise orbits and clocks from sideshow.jpl.nasa.gov
+    grep ${ndate}.eci${fid}.Z 		$tmpf1	| grep Rapid  > $tmpf2
+    grep ${ndate}.TPNML${fid}.Z		$tmpf1	| grep Rapid >> $tmpf2
+##  grep ${ndate}.frame			$tmpf1	| grep Rapid >> $tmpf1  ### NEW:fetch frame for/from RAPIDs below
+    grep ${ndate}.frame.gz		$tmpf1	| grep Rapid >> $tmpf2
+    if (! $?predict) then
+      grep ${ndate}.shadow_events.Z 	$tmpf1 	| grep Rapid >> $tmpf2
+      grep ${ndate}.gps_clocks${fid}.Z	$tmpf1	| grep Rapid >> $tmpf2
+      grep ${ndate}.yaw_rates.Z 	$tmpf1	| grep Rapid >> $tmpf2
+    endif
+  breaksw
+  case retro:
+    set retro
+    echo2 getting FLINN-RETRO precise orbits and clocks from sideshow.jpl.nasa.gov
+    grep ${ndate}${fid}.eci.Z 		$tmpf1  | grep  retro  > $tmpf2
+    grep ${ndate}tpeo${fid}.nml.Z 	$tmpf1  | grep  retro >> $tmpf2
+    grep ${ndate}.shad.Z 		$tmpf1	| grep  retro >> $tmpf2
+    grep ${ndate}${fid}.tdpc.Z 		$tmpf1  | grep  retro >> $tmpf2
+    set s = `grep ${ndate}${fid}.tdpc.Z          $tmpf1 | grep  retro | wc -l`
+    if (! $s) then
+      echo2 No precise clock solutions available
+    endif
+    if ($?get_xfile) then
+      set xf = `grep x-files $tmpf1 | grep  retro | grep -v 'No such file' | grep -v 'not found' | grep -iv directory `
+      echo $xf >> $tmpf2
+    endif
+    if ($?get_frame) then
+      grep ${ndate}.frame 	$tmpf1	| grep retro >> $tmpf2
+    endif
+  breaksw
+  default
+    set flinn
+    if ( $?ftp ) then
+      echo2 "Getting FLINN precise orbits and clocks from sideshow.jpl.nasa.gov"
+    else
+      echo2 "Getting FLINN precise orbits and clocks from $ORB_CACHE"
+    endif
+    grep ${ndate}_nf.eo.gz 		$tmpf1  | grep -v retro  > $tmpf2
+    grep ${ndate}_nf.pos.gz     	$tmpf1  | grep -v retro >> $tmpf2
+    grep ${ndate}.shad.gz 		$tmpf1	| grep -v retro >> $tmpf2
+    grep ${ndate}_nf.tdp.gz 		$tmpf1  | grep -v retro >> $tmpf2
+    grep ${ndate}_nf.wlpb.gz        $tmpf1 | grep -v retro >> $tmpf2
+	grep ${ndate}.ant.gz                $tmpf1  | grep -v retro >> $tmpf2 
+    grep ${ndate}.x.gz                  $tmpf1  | grep -v retro >> $tmpf2
+    grep ${ndate}.frame.gz              $tmpf1  | grep -v retro >> $tmpf2
+    set s = `grep ${ndate}${fid}.tdp    $tmpf1 | grep -v retro | wc -l`
+    if (! $s) then
+      if ($?hrc) then
+#        if (-e $GOA/local/hirate/*/${ndate}${fid}.tdpc.Z) then
+#          echo getting high rate clock from $GOA/local/hirate
+#	  cp $GOA/local/hirate/*/${ndate}${fid}.tdpc.Z .
+        if (-e $FLINN/hirate/dest/${ndate}${fid}.tdp.Z) then
+          echo getting high rate clock from $FLINN/hirate/dest
+          cp $FLINN/hirate/dest/${ndate}${fid}.tdp.Z .
+        else
+          echo2 No precise clock solutions available
+        endif
+      else
+        echo2 No precise clock solutions available
+      endif
+    endif
+    if ($?get_xfile) then
+      set xf = `grep x-files $tmpf1 | grep -v retro | grep -v 'No such file' | grep -v 'not found' | grep -iv directory  | tail -1 `
+      set xn = `grep x-files $tmpf1 | grep -v retro | grep -v 'No such file' | grep -v 'not found' | grep -iv directory  | wc -l`
+      if ($xn > 1) then
+        echo2 More than one possible XFILE. Will use $xf:t
+      endif
+      echo $xf >> $tmpf2
+    endif
+    if ($?get_frame) then
+      grep ${ndate}.frame 	$tmpf1	| grep -v retro >> $tmpf2
+    endif
+  breaksw
+endsw
+
+# check the orbit cache to see if we got these files recently
+if ( $?ftp ) then
+  foreach i (`cat $tmpf2`)
+    if (`echo $i | cut -c1` != ".") then 
+#
+# modification 2007-10-11: now force ftp when using -ftp
+# do NOT seek files in orbit cache
+#      set j = `echo $i | sed 's;^.*gipsy_products;'$ORB_CACHE';'`
+#      if (! -e $j) then
+#        set notfound
+#      endif
+      if (-d $ORB_CACHE) then	# make sure the directory tree exists
+        set j = `echo $i | sed 's;^.*gipsy_products.;;'`
+        set kk
+        foreach k (`echo $j:h | sed 's;/; ;'`)
+          set kk = $kk$k/
+          if (! -d $ORB_CACHE/$kk) then
+            mkdir $ORB_CACHE/$kk
+          endif
+        end
+      endif
+    endif
+  end
+  set notfound
+  if ($?notfound) then
+    echo 'ftp sideshow.jpl.nasa.gov << EnD' > $tmpf1
+    echo binary >> $tmpf1
+    foreach i (`cat $tmpf2`)
+      if (`echo $i | cut -c1` != ".") then 
+        echo "cd $i:h" >> $tmpf1
+        echo "get $i:t" >> $tmpf1
+      endif
+    end
+    echo quit >> $tmpf1
+    echo EnD >> $tmpf1
+#
+# execute ftp command
+    csh -f $tmpf1
+# update the cache
+    if (-d $ORB_CACHE) then
+      foreach i (`cat $tmpf2`)
+        if (`echo $i | cut -c1` != ".") then 
+          set j = `echo $i | sed 's;^.*gipsy_products;'$ORB_CACHE';'`
+          cp $i:t $j
+        endif
+      end
+    endif
+  else
+    echo Found the desired files in the local cache: $ORB_CACHE
+    foreach i (`cat $tmpf2`)
+      if (`echo $i | cut -c1` != ".") then 
+        set j = `echo $i | sed 's;^.*gipsy_products;'$ORB_CACHE';'`
+        cp $j .
+      endif
+    end
+  endif
+
+# else if -ftp is not set, simply copy files over
+else
+  echo Found the desired files in the local cache: $ORB_CACHE
+  foreach i (`cat $tmpf2`)
+     cp $i .
+  end 
+#
+# copy custom x-files
+  foreach i (`cat $tmpf4`)
+     cp $i .
+  end
+endif
+
+#if ($?rapid) then
+#  zcat ${ndate}.eci${fid}.Z > peci
+#  zcat ${ndate}.TPNML${fid}.Z > tpeo.nml
+#  if (! $?predict) then 
+#    zcat ${ndate}.gps_clocks${fid}.Z > TDPtmp
+#    zcat ${ndate}.shadow_events.Z > Shadow
+#    zcat ${ndate}.yaw_rates.Z > TDPyaw
+#    yaw_rates2tdp TDPyaw | tv2c - >> TDPtmp
+#    sort -T /tmp -n TDPtmp > TDPfile; rm -f TDPtmp TDPyaw
+#  endif
+#else
+#  zcat ${ndate}${fid}.eci.Z > peci
+#  zcat ${ndate}tpeo${fid}.nml.Z > tpeo.nml
+#  zcat ${ndate}.shad.Z > Shadow
+#  if ($?hrc) then
+#    zcat ${ndate}${fid}.tdp.Z | tv2c - > TDPfile
+#  else
+#    zcat ${ndate}${fid}.tdpc.Z > TDPfile
+#  endif
+#endif
+#if (-e $ndate.frame.gz) gunzip $ndate.frame.gz
+if (-e $ndate.frame) then
+  ln -sf $ndate.frame REFERENCE.FRAME
+else
+  if ($?get_frame) then
+    set start96 = `cal2sec 1998 03 01`
+    set assume94 = `echo $tsec $start96 | awk '{if ($1<($2-43200)) print 1; else print 0}'` 
+    if ($assume94) then
+      echo ITRF94 > REFERENCE.FRAME
+    else
+      echo unknown-fiducial > REFERENCE.FRAME
+    endif
+  else if ( ! $?nofid ) then
+    echo ITRF9x > REFERENCE.FRAME
+  else
+    echo free-network > REFERENCE.FRAME
+  endif
+endif
+
+rm -f $tmpf3
+
+if ($?get_xfile) then
+  if (-e $xf[$#xf]:t) then
+    echo Got corresponding XFILE
+    foreach i ($xf)
+     echo $i >> $tmpf3
+    end
+#	choose an Xfile. Take latest and greatest if there is a choice.
+    set f = `grep -i qx $tmpf3 | tail -1`
+    if (! $status) then
+#      set xkeep =  `echo $f | tail -1`
+      set xkeep =   $f 
+    endif
+    set f = `grep -i itrf94.x $tmpf3`
+    if (! $status) then
+#      set xkeep =  `echo $f | tail -1`
+      set xkeep =   $f 
+    endif
+    set f = `grep -i itrf96.x $tmpf3`
+    if (! $status) then
+#      set xkeep =  `echo $f | tail -1`
+      set xkeep =   $f 
+    endif
+    set f = `grep -i itrf97.x $tmpf3`
+    if (! $status) then
+#      set xkeep = `echo $f  | tail -1`
+      set xkeep =   $f 
+    endif
+    set f = `grep -i itrf00.x $tmpf3`
+    if (! $status) then
+#      set xkeep = `echo $f  | tail -1`
+      set xkeep =   $f 
+#      echo set xkeep to $xkeep
+    endif
+    set f = `grep -i itrf05.x $tmpf3`
+    if (! $status) then
+#      set xkeep = `echo $f  | tail -1`
+      set xkeep =   $f 
+#      echo set xkeep to $xkeep
+    endif
+
+    if ($xkeep:e == "Z") then
+      zcat $xkeep:t > XFILE
+    else
+      ln -sf $xkeep:t XFILE
+    endif
+    if (-e XFILE) then
+      set f = `egrep -i 'ITRF|IGS|JPL' XFILE`
+      if ( $status ) then
+#        obsolete fix
+#        set f = `echo $xkeep:t | sed 's/.*itrf/ITRF/;s/.x//'`
+        set f = `echo $xkeep:t:r:r:e | cut -d_ -f1`
+        if ( $status ) then
+           echo "WARNING - unexpected reference frame label"
+        else
+           echo NOTICE - fixing reference frame label to $f
+          set DAY = `echo $day | tr a-z A-Z`
+          echo " ! transformed from free-network to $f on $DAY." >> XFILE
+        endif
+      endif
+    else if ( ! $?nofid ) then
+      echo 'WARNING fiducial should not need XFILE; setting frame to itrf9x'
+    else
+      echo "WARNING unknown reference frame"
+    endif
+  endif 
+endif
+#
+# custom x-files
+foreach xfile ( `cat $tmpf4` )
+  echo "Got custom x-file $xfile:t"
+  ln -sf $xfile:t XFILE.$xfile:t:r:e
+end
+
+if ($?predict) then
+  echo2 Predicted precise orbits retrieved.
+endif
+rm -f $tmpf1 $tmpf2 $tmpf3 $tmpf4

@@ -1,0 +1,30 @@
+#!/bin/sh
+#This will process a series of rinex files for continous sites without
+#qcing anything except for 1500 ninja obs it will keep all the file outputs and
+#logs in the yyy.doy directiries
+#non-frame.run will process data using jpl orbits and clocks
+#
+
+non-frame.devide
+for yyyydoy in `ls -d ????.???`; do
+		echo
+		echo Using jpl orbits files
+		echo START $yyyydoy
+		echo
+		year=`echo $yyyydoy |cut -c1-4`
+		doy=`echo $yyyydoy |cut -c6-8`
+		echo $year $doy
+		cd $year.$doy/.
+		for rnxdir in `ls -d ????????.??`;do
+			cd $rnxdir
+			cln_rnx
+			for file in `ls ????????.???.Z ????????.??o 2>/dev/null `;do
+			echo $file
+               #        gd2p_zap_jpls $file -save
+                   	gd2p_zap_jpls $file 
+			done
+			cd ../.
+		done
+done
+
+

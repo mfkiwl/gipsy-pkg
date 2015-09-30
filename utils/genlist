@@ -1,0 +1,13 @@
+#!/bin/bash
+
+if [ $# -lt 1 ];then
+echo You must sepcify the format of file you want to list
+exit 1
+fi
+
+fmt=$1
+
+for file in $(ls *.$fmt) 
+do
+echo $file >> list
+done

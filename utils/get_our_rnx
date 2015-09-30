@@ -1,0 +1,38 @@
+#!/bin/sh
+
+if [ $# -lt 3 ];then
+	echo
+	echo
+	echo You must specify the DOY, YEAR and NET 
+	echo NET can be KA12,CORS, DECATUR, GR, TX et al.
+	echo
+	echo This will copy sites from our Archive:/data2/yang/gpsArchive/rnx
+	echo
+	echo
+	exit 1
+fi
+
+doy=$1
+year=$2
+net=$3
+#site=$4
+
+yr=`echo $year |cut -c3-4`
+dir='/data2/yang/gpsArchive/rnx/'
+
+for SITE in $(grep -h qian ~/sta_id | gawk '{print $1}');do
+	if [ $net = 'TX' ] || [ $net = 'DECATUR' ]
+	then
+		site=$(echo $SITE)
+                rnx=$site$doy'z.'$yr'd.Z'
+	elif [ $net = 'CORS' ] || [ $net = 'KA12' ]
+        then
+	site=$(echo $SITE |tr '[A-Z]' '[a-z]')
+        rnx=$site$doy'0.'$yr'd.Z'
+    fi
+    #rnx=$site$doy'z.'$yr'd.Z'
+    file=$dir$net/$SITE/$year/$rnx
+    cp $file .
+	#echo $file
+done
+

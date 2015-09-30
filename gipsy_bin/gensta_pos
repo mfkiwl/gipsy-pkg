@@ -1,0 +1,58 @@
+#!/bin/bash
+# This scipt is used to generated sta_pos file according to sta_id
+# Q.Yang Oct-18-2012
+
+if [ $# -lt 2 ]; then
+	echo You must specify the names of sta_id file and sta_svec file
+	exit 1
+fi
+
+idfile=$1
+posfile=$2
+#idfile=sta_id_greenland
+line=$(find $idfile -print0 | xargs -0 wc -l | awk '{print $1}')
+logdir=~/logfile/cors
+#echo $line
+for ((i=1;i<=$line;i++))
+do
+	NAME=$(sed -n ''$i'p' $idfile | awk '{print $1}')
+	name=$(echo $NAME | tr '[:upper:]' '[:lower:]')
+	log1="$name"log.txt
+	log2="$name".log.txt
+    if [ -e $logdir/$log1 ] && [ -e $logdir/$log2 ]
+	then
+		log=$log1
+	elif [ -e $logdir/$log1 ] && [ ! -e $logdir/$log2 ]
+	then
+		log=$log1
+	elif [ -e $logdir/$log2 ] && [ ! -e $logdir/$log1 ]
+	then
+		log=$log2
+	fi
+	year=$(grep "Date Installed" $logdir/$log | head -n 1 | awk -F: '{print $2}'| awk -F - '{print $1}' | awk '{print $1}')
+	month=$(grep "Date Installed" $logdir/$log | head -n 1 | awk -F: '{print $2}'| awk -F - '{print $2}')
+	day=$(grep "Date Installed" $logdir/$log | head -n 1 | awk -F: '{print $2}'| awk -F - '{print $3}' | awk -F T '{print $1}')
+	hour=$(grep "Date Installed" $logdir/$log | head -n 1 | awk -F: '{print $2}'| awk -F - '{print $3}' | awk -F T '{print $2}')
+	if [ -z "$hour" ]
+	then
+		hour=00
+	fi
+	min=00
+	sec=00.00
+	time=$(echo $year $month $day $hour $min $sec)
+	dur=1000001.00
+    
+	posx=$(grep "X coordinate (m)" $logdir/$log | awk -F : '{print $2}' | awk '{print $1}')
+	posy=$(grep "Y coordinate (m)" $logdir/$log | awk -F : '{print $2}' | awk '{print $1}')
+	posz=$(grep "Z coordinate (m)" $logdir/$log | awk -F : '{print $2}' | awk '{print $1}')
+
+	evelx=0.00000000e+00
+	evely=0.00000000e+00
+	evelz=0.00000000e+00
+	curyear=$(date | awk '{print $6}')
+	curmon=$(date | awk '{print $2}')
+	curday=$(date | awk '{print $3}')
+	commend="qian $curyear $curmon $curday sitelog"
+	#echo $year $month $day $hour $min $sec $dur $posx $posy $posz $evelx $evely $evelz $commend
+    printf " $NAME $time $dur %15.4f %14.4f %14.4f  $evelx $evely $evelz $commend\n" "$posx" "$posy" "$posz" >> $posfile
+done

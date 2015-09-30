@@ -1,0 +1,26 @@
+#!/bin/csh -f
+#
+set nonomatch
+if ( $#argv <= 1 || ( $1 != delete && $1 != list ) ) then
+ echo 'Useage:  empty_stacov [list|delete] *.stacov'
+ echo 'Purpose: detects which stacov files are empty (no parameters)'
+ echo '         if "list" is set, then simply lists which files are empty'
+ echo '          or files that do not exist'
+ echo '         if "delete" is set, then deletes empty files if they exist'
+ echo 'Author:  Geoff Blewitt 2005-10-8'
+ echo 'Limitations: fails if > 9,000 files (~18 yrs of daily stacov files)'
+ exit 1
+endif
+foreach f ( $argv[2-] )
+   if ( ! -e $f ) then
+      if ( $1 == list ) echo $f
+      continue
+   endif 
+   if ( ! `grep -m 1 "STA X" $f | wc -l` ) then 
+     if ( $1 == list ) then
+        echo $f
+     else
+        rm -v $f
+     endif
+  endif
+end 
